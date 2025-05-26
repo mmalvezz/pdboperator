@@ -1,0 +1,7 @@
+[ol8_oracle_instantclient21]
+name=Oracle Instant Client 21 for Oracle Linux $releasever ($basearch)
+baseurl=https://yum$ociregion.oracle.com/repo/OracleLinux/OL8/oracle/instantclient21/$basearch/
+gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-oracle
+gpgcheck=1
+enabled=1
+

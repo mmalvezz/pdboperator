@@ -1,0 +1,9 @@
+apiVersion: database.oracle.com/v4
+kind: PDB
+metadata:
+  labels:
+    app.kubernetes.io/name: pdboperator
+    app.kubernetes.io/managed-by: kustomize
+  name: pdb-sample
+spec:
+  # TODO(user): Add fields here

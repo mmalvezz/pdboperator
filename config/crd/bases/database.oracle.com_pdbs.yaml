@@ -1,0 +1,219 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.16.5
+  name: pdbs.database.oracle.com
+spec:
+  group: database.oracle.com
+  names:
+    kind: PDB
+    listKind: PDBList
+    plural: pdbs
+    singular: pdb
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - description: Name of the PDB
+      jsonPath: .spec.pdbName
+      name: PDB NAME
+      type: string
+    - description: PDB Open Mode
+      jsonPath: .status.openMode
+      name: OPENMODE
+      type: string
+    - description: Total Size of the PDB
+      jsonPath: .status.totalSize
+      name: PDB_SIZE
+      type: string
+    - description: Error message, if any
+      jsonPath: .status.message
+      name: MESSAGE
+      type: string
+    - description: rdbms handle address
+      jsonPath: .status.dbHandle
+      name: DBHANDLE
+      type: string
+    - description: bitmask status
+      jsonPath: .status.pdbBitMaskStr
+      name: STATE_BITMASK_STR
+      type: string
+    - description: The connect string to be used
+      jsonPath: .status.connectString
+      name: CONNECT_STRING
+      type: string
+    name: v4
+    schema:
+      openAPIV3Schema:
+        description: PDB is the Schema for the pdbs API
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            properties:
+              Parameter:
+                type: string
+              asClone:
+                type: boolean
+              cdbPwd:
+                properties:
+                  secret:
+                    description: PDBSecret defines the secretName
+                    properties:
+                      key:
+                        type: string
+                      secretName:
+                        type: string
+                    required:
+                    - key
+                    - secretName
+                    type: object
+                required:
+                - secret
+                type: object
+              cdbSys:
+                properties:
+                  secret:
+                    description: PDBSecret defines the secretName
+                    properties:
+                      key:
+                        type: string
+                      secretName:
+                        type: string
+                    required:
+                    - key
+                    - secretName
+                    type: object
+                required:
+                - secret
+                type: object
+              copyAction:
+                enum:
+                - COPY
+                - NOCOPY
+                - MOVE
+                type: string
+              dropAction:
+                enum:
+                - INCLUDING
+                - KEEP
+                type: string
+              fileNameConversions:
+                type: string
+              pdbName:
+                type: string
+              pdbPwd:
+                description: PDBPass defines the secret containing Sys Admin Password
+                  mapped to key 'adminPwd' for PDB
+                properties:
+                  secret:
+                    description: PDBSecret defines the secretName
+                    properties:
+                      key:
+                        type: string
+                      secretName:
+                        type: string
+                    required:
+                    - key
+                    - secretName
+                    type: object
+                required:
+                - secret
+                type: object
+              pdbState:
+                enum:
+                - OPEN
+                - OPEN_READ_ONLY
+                - CLOSE
+                - DROP
+                type: string
+              pdbState2:
+                type: integer
+              pdbSys:
+                description: PDBsys defines the secret containing Sys Admin User mapped
+                  to key 'adminName' for PDB
+                properties:
+                  secret:
+                    description: PDBSecret defines the secretName
+                    properties:
+                      key:
+                        type: string
+                      secretName:
+                        type: string
+                    required:
+                    - key
+                    - secretName
+                    type: object
+                required:
+                - secret
+                type: object
+              reuseTempFile:
+                type: boolean
+              sourceFileNameConversions:
+                type: string
+              sparseClonePath:
+                type: string
+              tempSize:
+                type: string
+              tnsstring:
+                type: string
+              totalSize:
+                type: string
+              unlimitedStorage:
+                type: boolean
+              xmlFileName:
+                type: string
+            type: object
+          status:
+            description: PDBStatus defines the observed state of PDB
+            properties:
+              connectString:
+                type: string
+              connected:
+                type: boolean
+              dbHandle:
+                description: Db handles address
+                type: string
+              dbHandle64:
+                description: Last Completed Action
+                format: int64
+                type: integer
+              message:
+                type: string
+              modifyOption:
+                description: Modify Option of the PDB
+                type: string
+              openMode:
+                description: Open mode of the PDB
+                type: string
+              pdbBitMask:
+                description: Total size of the PDB
+                type: integer
+              pdbBitMaskStr:
+                type: string
+              pdbStatus:
+                type: string
+              totalSize:
+                type: string
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

@@ -1,0 +1,3 @@
+select (count(*))*20, CLASSE  from adoption_tomoc
+group by CLASSE
+/

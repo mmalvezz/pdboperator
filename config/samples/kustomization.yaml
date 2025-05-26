@@ -1,0 +1,4 @@
+## Append samples of your project ##
+resources:
+- database_v4_pdb.yaml
+# +kubebuilder:scaffold:manifestskustomizesamples
