@@ -1,0 +1,2 @@
+drop pluggable database pdb1_tnt including datafiles
+/

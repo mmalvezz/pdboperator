@@ -5,10 +5,10 @@ metadata:
   namespace: pdbnamespace 
 spec:
   pdbName: pdb2_tnt
-  tnsstring: (DESCRIPTION=(CONNECT_TIMEOUT=90)(RETRY_COUNT=30)(RETRY_DELAY=10)(TRANSPORT_CONNECT_TIMEOUT=70)(TRANSPORT_CONNECT_TIMEOUT=10)(LOAD_BALLANCE=ON)(ADDRESS=(PROTOCOL=TCP)(HOST=phoenix416171.dev3sub2phx.databasede3phx.oraclevcn.com)(PORT=1521)(IP=V4_ONLY))(CONNECT_DATA=(SERVER=DEDICATED)(SERVICE_NAME=c4.regress.rdbms.dev.us.oracle.com)))
+  tnsstring: "(DESCRIPTION=(CONNECT_TIMEOUT=90)(RETRY_COUNT=30)(RETRY_DELAY=10)(TRANSPORT_CONNECT_TIMEOUT=70)(TRANSPORT_CONNECT_TIMEOUT=10)(LOAD_BALLANCE=ON)(ADDRESS=(PROTOCOL=TCP)(HOST=phoenix416171.dev3sub2phx.databasede3phx.oraclevcn.com)(PORT=1521)(IP=V4_ONLY))(CONNECT_DATA=(SERVER=DEDICATED)(SERVICE_NAME=c4.regress.rdbms.dev.us.oracle.com)))"
   totalSize: "2G"
   tempSize: "800M"
-  fileNameConversions: "'....path2....','pdb2_tnt'"
+  fileNameConversions: "'/ade/b/3988690971/oracle/dbs/','pdb2_tnt'"
   reuseTempFile: true
   unlimitedStorage: true
   cdbSys:

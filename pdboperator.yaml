@@ -44,10 +44,6 @@ spec:
       name: DBHANDLE
       type: string
     - description: bitmask status
-      jsonPath: .status.pdbBitMask
-      name: STATE_BITMASK
-      type: integer
-    - description: bitmask status
       jsonPath: .status.pdbBitMaskStr
       name: STATE_BITMASK_STR
       type: string
@@ -195,8 +191,6 @@ spec:
           status:
             description: PDBStatus defines the observed state of PDB
             properties:
-              action:
-                type: string
               connectString:
                 type: string
               connected:
@@ -541,7 +535,7 @@ spec:
         env:
         - name: WATCH_NAMESPACE
           value: ""
-        image: [....<some-registry>/pdboperator:tag....]
+        image: lin.ocir.io/intsanjaysingh/mmalvezz/testppr/pdbcontroller:latest
         livenessProbe:
           httpGet:
             path: /healthz

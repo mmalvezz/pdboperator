@@ -100,9 +100,10 @@ typedef struct pdbinfo
 
 /* Cursor Index */
 
-#define  SQLEFE   0 /* Ephemeral: used for ddl */
-#define  PDBNAM   1 /* Select pdbname and open_mode from v$pdb */
-#define  PDBSPC   2 /* Spare 1 */
+#define  PDBNAM   0 /* Select pdbname and open_mode etc ttc from v$pdb */
+#define  PDBSPC   1 /* select * from v$pdb  */
+#define  PDBDET   2 /* select * from v$pdbs where name = :b1 */
 #define  PDBVIL   3 /* Spare 2 */
+#define  SQLEFE   4 /* Ephemeral: used for ddl */
 
 

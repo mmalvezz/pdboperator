@@ -1,4 +1,6 @@
 #include <oci.h>
+#define MAXBUFLEN 20
+
 
 OCIHandlePool *OpenConnection (text * username, text * password,
 			       text * tnsalias, FILE * logfile);
@@ -6,6 +8,8 @@ OCIHandlePool *OCIConnectRDBMS (text * uname, text * psswd, text * tnsal);
 void OCICheckConnection (OCIHandlePool * Hp, ub1 * status);
 void FreeOCIcred (OCICred * ptr);
 void HandleCursor (OCIHandlePool * Hp, OraText * sqltext, ub1 OpenIndex);
+void OpenCursors (OCIHandlePool * Hp,ub1 crsidx);
+void GetPdbInfo(OCIHandlePool *db, ub1 crsidx,const char **clobjson,pdbinfo * ptr);
 int ExecuteCrsidx ( /*... Execute cursor ... */ );
 OCIHandlePool *CastPtr ( /*... cast to pointer ... */ );
 void SetApplicationInfo ( /*... Set dbms application info .. */ );
@@ -13,9 +17,12 @@ ub1 OCICreatePdb (OCIHandlePool * db, ub1 crsidx, pdbinfo * ptr);
 ub1 OCIOpenPdb (OCIHandlePool * db, ub1 crsidx, pdbinfo * ptr);
 ub1 OCIClosePdb (OCIHandlePool * db, ub1 crsidx, pdbinfo * ptr);
 ub1 OCIDropPdb (OCIHandlePool * db, ub1 crsidx, pdbinfo * ptr);
+text *CursorCLOB2JSONInit (OCIHandlePool *Hp,ub1 crsidx, pdbinfo * ptr);
 void CloseCursor ( /*.... close cursor .... */ );
 OCIHandlePool *CastPtr (ub8 addr);
 void OCIFreeHandle (OCIHandlePool * Hp);
+static text * ReadLob (OCIHandlePool *Hp, OCILobLocator *lobl);
+
 
 
 static void checkerr ( /* check error */ );
@@ -139,8 +146,8 @@ OpenConnection (username, password, tnsalias, logfile)
   fprintf (stdout, "OCIClientVersion:\t %i.%i.%i.%i.%i\n", major, minor,
 	   update, patch, port_update);
 
-  fprintf (stdout, "Opening Cursors\n");
-  HandleCursor (Hp, sqltext[CHKWTR], CHKWTR);
+  //fprintf (stdout, "Opening Cursors\n");
+  //HandleCursor (Hp, sqltext[CHKWTR], CHKWTR);
   return ((OCIHandlePool *) Hp);
 }
 
@@ -169,7 +176,19 @@ HandleCursor (Hp, sqltext, OpenIndex)
 			    (ub4) OCI_NTV_SYNTAX, (ub4) OCI_DEFAULT));
 }
 
+void OpenCursors(Hp,crsidx)
+     OCIHandlePool *Hp;
+     ub1            crsidx;
+{
+text *sql[]={"select name from v$pdbs where con_id=:b1",
+    "select json_arrayagg( json_object('con_id' is con_id,'dbid' is dbid,'con_uid' is con_uid,'guid' is guid,'name' is name,'open_mode' is open_mode,'restricted' is restricted,'open_time' is open_time,'create_scn' is create_scn,'total_size' is total_size,'block_size' is block_size,'recovery_status' is recovery_status,'snapshot_parent_con_id' is snapshot_parent_con_id,'application_root' is application_root,'application_pdb' is application_pdb,'application_seed' is application_seed,'application_root_con_id' is application_root_con_id,'application_root_clone' is application_root_clone,'proxy_pdb' is proxy_pdb,'local_undo' is local_undo,'undo_scn' is undo_scn,'undo_timestamp' is undo_timestamp,'creation_time' is creation_time,'diagnostics_size' is diagnostics_size,'pdb_count' is pdb_count,'audit_files_size' is audit_files_size,'max_size' is max_size,'max_diagnostics_size' is max_diagnostics_size,'max_audit_size' is max_audit_size,'last_changed_by' is last_changed_by,'template' is template,'tenant_id' is tenant_id,'upgrade_level' is upgrade_level,'guid_base64' is guid_base64 ) returning clob pretty ) from v$pdbs",
+"select json_arrayagg( json_object('con_id' is con_id,'dbid' is dbid,'con_uid' is con_uid,'guid' is guid,'name' is name,'open_mode' is open_mode,'restricted' is restricted,'open_time' is open_time,'create_scn' is create_scn,'total_size' is total_size,'block_size' is block_size,'recovery_status' is recovery_status,'snapshot_parent_con_id' is snapshot_parent_con_id,'application_root' is application_root,'application_pdb' is application_pdb,'application_seed' is application_seed,'application_root_con_id' is application_root_con_id,'application_root_clone' is application_root_clone,'proxy_pdb' is proxy_pdb,'local_undo' is local_undo,'undo_scn' is undo_scn,'undo_timestamp' is undo_timestamp,'creation_time' is creation_time,'diagnostics_size' is diagnostics_size,'pdb_count' is pdb_count,'audit_files_size' is audit_files_size,'max_size' is max_size,'max_diagnostics_size' is max_diagnostics_size,'max_audit_size' is max_audit_size,'last_changed_by' is last_changed_by,'template' is template,'tenant_id' is tenant_id,'upgrade_level' is upgrade_level,'guid_base64' is guid_base64 ) returning clob pretty ) from v$pdbs where name =upper(:b1)"};
 
+fprintf(stderr,"Openining cursor:%s\n",sql[crsidx]);
+
+HandleCursor(Hp,sql[crsidx],crsidx);
+
+}
 
 
 void
@@ -622,6 +641,166 @@ CastPtr (addr)
   return ((OCIHandlePool *) Hp);
 }
 
+
+
+void GetPdbInfo(OCIHandlePool *db, ub1 crsidx,const char **clobjson,pdbinfo *ptr)
+{
+  *clobjson=CursorCLOB2JSONInit(db, crsidx, ptr);
+}
+
+
+text *
+CursorCLOB2JSONInit (Hp, crsidx, ptr)
+     OCIHandlePool *Hp;
+     ub1 crsidx;
+     pdbinfo *ptr;
+
+{
+  ub1 rc;
+  OCILobLocator *clob;
+  text *jsonclob;
+
+  if (OCIDescriptorAlloc
+      ((dvoid *) Hp->envhp, (dvoid **) & clob, (ub4) OCI_DTYPE_LOB,
+       (size_t) 0, (dvoid **) 0))
+    {
+      fprintf (stderr, "FAILED: OCIDescriptorAlloc()\n");
+      return ((char *) NULL);
+    }
+
+
+  checkerr3 (Hp->errhp, OCIDefineByPos ((OCIStmt *) Hp->stmthpidx[crsidx],
+					(OCIDefine **) & Hp->def,
+					(OCIError *) Hp->errhp, (ub4) 1,
+					(dvoid *) & clob, sizeof (ub2),
+					(ub2) SQLT_CLOB, (dvoid *) 0,
+					(ub2 *) 0, (ub2 *) 0,
+					(ub4) OCI_DEFAULT), Hp->errmsg);
+
+  checkerr3 (Hp->errhp,
+	     OCIBindByName ((OCIStmt *) Hp->stmthpidx[crsidx],
+			    (OCIBind **) & Hp->bnd, (OCIError *) Hp->errhp,
+			    (OraText *) ":b1", strlen (":b1"),
+			    (dvoid *) ptr->pdbname, strlen (ptr->pdbname), SQLT_CHR,
+			    (dvoid *) 0, (ub2 *) 0, (ub2 *) 0, (ub4) 0,
+			    (ub4 *) 0, OCI_DEFAULT), Hp->errmsg);
+  if (Hp->errmsg->errcode != 0){
+      OCIDescriptorFree (&clob, OCI_DTYPE_LOB);
+      fprintf (stderr, "OCIBindByNmae:ORA-%i\n", Hp->errmsg->errcode);
+      return ((text *) NULL);
+  }
+
+  checkerr3 (Hp->errhp,
+	     OCIStmtExecute ((OCISvcCtx *) Hp->svchp,
+			     (OCIStmt *) Hp->stmthpidx[crsidx],
+			     (OCIError *) Hp->errhp, (ub4) 0,
+			     (ub4) 0,
+			     (CONST OCISnapshot *) NULL,
+			     (OCISnapshot *) NULL, (ub4) OCI_DEFAULT),
+	     Hp->errmsg);
+
+  if (Hp->errmsg->errcode != 0)
+    {
+      OCIDescriptorFree (&clob, OCI_DTYPE_LOB);
+      fprintf (stderr, "OCIStmtExecute:ORA-%i\n", Hp->errmsg->errcode);
+      return ((text *) NULL);
+    }
+
+
+  for (;;)
+    {
+
+      rc =
+	OCIStmtFetch ((OCIStmt *) Hp->stmthpidx[crsidx],
+		      (OCIError *) Hp->errhp, (ub4) 1, (ub2) OCI_FETCH_NEXT,
+		      (ub4) OCI_DEFAULT);
+      if (rc == OCI_NO_DATA)
+      {
+	break;
+      } else {	
+            
+      jsonclob = ReadLob (Hp, clob);
+      }
+
+    }
+
+
+
+
+  OCIDescriptorFree (&clob, OCI_DTYPE_LOB);
+  return (jsonclob);
+}
+
+static text *
+ReadLob (Hp, lobl)
+     OCIHandlePool *Hp;
+     OCILobLocator *lobl;
+{
+  ub4 offset = 1;
+  ub4 loblen = 0;
+  ub1 bufp[MAXBUFLEN];
+  ub4 amtp = 0;
+  sword retval;
+  ub4 piece = 0;
+  ub4 remainder;		/* the number of bytes for the last piece */
+  text *buffer;
+  (void) OCILobGetLength (Hp->svchp, Hp->errhp, lobl, &loblen);
+  amtp = loblen;
+  buffer = (text *) malloc (loblen * sizeof (text));
+  memset ((text *) buffer, '\0', loblen);
+#ifdef DEBUG
+  (void) printf ("--> To stream read LOB, loblen = %d.\n", loblen);
+#endif
+  memset ((void *) bufp, '\0', MAXBUFLEN);
+  retval =
+    OCILobRead (Hp->svchp, Hp->errhp, lobl, &amtp, offset, (dvoid *) bufp,
+		(loblen < MAXBUFLEN ? loblen : MAXBUFLEN), (dvoid *) 0,
+		(OCICallbackLobRead) 0, (ub2) 0, (ub1) SQLCS_IMPLICIT);
+  switch (retval)
+    {
+    case OCI_SUCCESS:		/* only one piece */
+#ifdef DEBUG
+      (void) printf ("stream read %d th piece\n", ++piece);
+#endif
+      strncat ((text *) buffer, (void *) bufp, (size_t) loblen);
+      break;
+    case OCI_ERROR:
+      fprintf (stderr, "ERROR IN ReadLob\n");
+      break;
+    case OCI_NEED_DATA:	/* there are 2 or more pieces */
+      remainder = loblen;
+      strncat ((text *) buffer, (void *) bufp, MAXBUFLEN);
+      do
+	{
+	  memset ((void *) bufp, '\0', MAXBUFLEN);
+	  amtp = 0;
+	  remainder -= MAXBUFLEN;
+	  retval =
+	    OCILobRead (Hp->svchp, Hp->errhp, lobl, &amtp, offset,
+			(dvoid *) bufp, (ub4) MAXBUFLEN, (dvoid *) 0,
+			(OCICallbackLobRead) 0, (ub2) 0,
+			(ub1) SQLCS_IMPLICIT);
+	  /*
+	   * the amount read returned is undefined for FIRST, NEXT pieces 
+	   */
+#ifdef DEBUG
+	  (void) printf ("stream read %d th piece, amtp = %d\n", ++piece,
+			 amtp);
+#endif
+	  if (remainder < MAXBUFLEN)	/* last piece not a full buffer piece */
+	    strncat ((text *) buffer, (void *) bufp, (size_t) remainder);
+	  else
+	    strncat ((text *) buffer, (void *) bufp, MAXBUFLEN);
+	}
+      while (retval == OCI_NEED_DATA);
+      break;
+    default:
+      (void) printf ("Unexpected ERROR: OCILobRead() LOB.\n");
+      break;
+    }
+
+  return (buffer);
+}
 
 void
 OCIFreeHandle (Hp)

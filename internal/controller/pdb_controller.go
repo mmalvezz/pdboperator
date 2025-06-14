@@ -33,6 +33,7 @@ import "C"
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -62,12 +63,11 @@ const (
 const PDBFinalizer = "database.oracle.com/PDBFinalizer"
 
 const (
-	SQLEFE = 0
-	PDBDET = 1
-	PDBSPC = 2 /* Used by get /pdbname/status and get /pdbname */
+	PDBNAM = 0 /* select only pdb name */
+	PDBSPC = 1 /* select * from v$pdb */
+	PDBDET = 2 /* Select * from v$pdbs where name = :b1 */
 	PDBVIL = 3 /* Plug in database violation */
-	SQLERR = 4 /* just tyo test sql handle error */
-	SQLPAR = 5
+	SQLEFE = 4 /* just tyo test sql handle error */
 )
 
 // PDBReconciler reconciles a PDB object
@@ -134,6 +134,14 @@ func (r *PDBReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 			pdb.Status.PDBBitMask = Bis(pdb.Status.PDBBitMask, OCIHDE)
 			r.UpdateStatus(ctx, pdb)
 		}
+
+		err = r.OpenSQL(ctx, req, pdb)
+		if err != nil {
+			log.Error(err, err.Error())
+			pdb.Status.PDBBitMask = Bis(pdb.Status.PDBBitMask, OCIHDE)
+			r.UpdateStatus(ctx, pdb)
+		}
+
 		pdb.Status.PDBBitMaskStr = Bitmaskprint(pdb.Status.PDBBitMask)
 		r.UpdateStatus(ctx, pdb)
 	}
@@ -219,9 +227,70 @@ func (r *PDBReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 
 	//* MONITOR  RESOURCE STATUS *//
 
+	if Bit(pdb.Status.PDBBitMask, OCICON|PDBCRT|OCIHDL) == true && Bit(pdb.Status.PDBBitMask, PDBDIC) != true {
+		r.MonitorResource(ctx, pdb)
+	}
+
 	log.Info("STATEBITMASK:" + pdb.Status.PDBBitMaskStr)
 	return requeueY, nil
 
+}
+
+func (r *PDBReconciler) MonitorResource(ctx context.Context, pdb *databasev4.PDB) error {
+	log := logf.FromContext(ctx).WithValues("Monitor resource", "MonitorResource(ctx, pdb)")
+
+	log.Info("monitr resource")
+	var p1 C.struct_pdbinfo
+
+	var pdbjson *C.char
+	var dbhandle (*C.struct_OCIHandlePool)
+
+	dbhandle = C.CastPtr(C.ulong(pdb.Status.Dbhandle64))
+	copy(unsafe.Slice((*byte)(unsafe.Pointer(&p1.pdbname)), len(pdb.Spec.PDBName)), pdb.Spec.PDBName)
+	C.GetPdbInfo(dbhandle, PDBDET, &pdbjson, (*C.pdbinfo)(&p1))
+
+	lobdata := C.GoString(pdbjson)
+	var jsonMap []map[string]interface{}
+	err := json.Unmarshal([]byte(lobdata), &jsonMap)
+	if err != nil {
+		log.Info("Error unmarshal")
+	}
+
+	firstelement := jsonMap[0]
+
+	tsize := fmt.Sprintf("%10.0f", firstelement["total_size"].(float64))
+	log.Info("PDB:[PDBNAME]:" + firstelement["name"].(string) + "[OPEN_MODE]:" + firstelement["open_mode"].(string))
+	//
+	// fmt.Printf("PDBNAME        :%s\n", firstelement["name"].(string))
+	// fmt.Printf("OPEN_MODE      :%s\n", firstelement["open_mode"].(string))
+	// fmt.Printf("TOTAL_SIZE     :%f\n", firstelement["total_size"].(float64))
+	// fmt.Printf("TOTAL_SIZE     :%s\n", tsize)
+
+	/* Update pdb size */
+	if pdb.Status.TotalSize != tsize {
+		pdb.Status.TotalSize = tsize
+		r.UpdateStatus(ctx, pdb)
+	}
+
+	/* Check open mode */
+	if pdb.Status.OpenMode != firstelement["open_mode"].(string) {
+		if pdb.Status.OpenMode == "READ WRITE" && firstelement["open_mode"].(string) == "MOUNTED" {
+			pdb.Status.OpenMode = "MOUNTED"
+			pdb.Status.PDBBitMask = Bid(pdb.Status.PDBBitMask, PDBOPN)
+			pdb.Status.PDBBitMask = Bis(pdb.Status.PDBBitMask, PDBCLS)
+		}
+		if pdb.Status.OpenMode == "MOUNTED" && firstelement["open_mode"].(string) == "READ WRITE" {
+			pdb.Status.OpenMode = "READ WRITE"
+			pdb.Status.PDBBitMask = Bid(pdb.Status.PDBBitMask, PDBCLS)
+			pdb.Status.PDBBitMask = Bis(pdb.Status.PDBBitMask, PDBOPN)
+		}
+		pdb.Status.PDBBitMaskStr = Bitmaskprint(pdb.Status.PDBBitMask)
+		r.UpdateStatus(ctx, pdb)
+
+	}
+	C.free(unsafe.Pointer(pdbjson))
+
+	return nil
 }
 
 func (r *PDBReconciler) UpdateStatus(ctx context.Context, pdb *databasev4.PDB) {
@@ -293,6 +362,36 @@ func (r *PDBReconciler) RDBMSHandles(ctx context.Context, req ctrl.Request, pdb 
 
 }
 
+func (r *PDBReconciler) OpenSQL(ctx context.Context, req ctrl.Request, pdb *databasev4.PDB) error {
+	log := logf.FromContext(ctx).WithValues("OpenSQL", req.NamespacedName)
+	var dbhandle (*C.struct_OCIHandlePool)
+	var OpenErr (*C.struct_OCIErrmsg)
+
+	dbhandle = C.CastPtr(C.ulong(pdb.Status.Dbhandle64))
+	log.Info("opening cursors")
+	C.OpenCursors(dbhandle, PDBNAM)
+	OpenErr = dbhandle.errmsg
+	if OpenErr.errcode != 0 {
+		log.Info("[PDBNAM]SQLCA.SQLCODE:" + fmt.Sprintf("%d", OpenErr.errcode))
+		log.Info("[PDBNAM]SQLCA.ERRMSG:" + fmt.Sprintf("%s", OpenErr.errbuf))
+		return errors.New("Falied to open PDBNAM")
+	}
+	C.OpenCursors(dbhandle, PDBSPC)
+	if OpenErr.errcode != 0 {
+		log.Info("[PDBSPC]SQLCA.SQLCODE:" + fmt.Sprintf("%d", OpenErr.errcode))
+		log.Info("[PDBSPC]SQLCA.ERRMSG:" + fmt.Sprintf("%s", OpenErr.errbuf))
+		return errors.New("Falied to open PDBSPC")
+	}
+	C.OpenCursors(dbhandle, PDBDET)
+	if OpenErr.errcode != 0 {
+		log.Info("[PDBDET]SQLCA.SQLCODE:" + fmt.Sprintf("%d", OpenErr.errcode))
+		log.Info("[PDBDET]SQLCA.ERRMSG:" + fmt.Sprintf("%s", OpenErr.errbuf))
+		return errors.New("Falied to open PDBDET")
+	}
+
+	return nil
+}
+
 func (r *PDBReconciler) ClosePDB(ctx context.Context, req ctrl.Request, pdb *databasev4.PDB) error {
 	log := logf.FromContext(ctx).WithValues("ClosePDB", req.NamespacedName)
 	var p1 C.struct_pdbinfo
@@ -318,7 +417,7 @@ func (r *PDBReconciler) ClosePDB(ctx context.Context, req ctrl.Request, pdb *dat
 		}
 
 		pdb.Status.Message = "CLOSE:OK"
-		pdb.Status.OpenMode = "MOUNT"
+		pdb.Status.OpenMode = "MOUNTED"
 		pdb.Status.PDBStatus = "CLOSE"
 		r.UpdateStatus(ctx, pdb)
 	}
@@ -415,7 +514,7 @@ func (r *PDBReconciler) CreatePDB(ctx context.Context, req ctrl.Request, pdb *da
 	} else {
 		pdb.Status.TotalSize = pdb.Spec.TotalSize
 		pdb.Status.Message = "CREATE:OK"
-		pdb.Status.OpenMode = "MOUNT"
+		pdb.Status.OpenMode = "MOUNTED"
 		pdb.Status.ConnString = pdb.Spec.TNSstrg
 		ParseTnsAlias(&(pdb.Status.ConnString), &(pdb.Spec.PDBName))
 		r.Recorder.Eventf(pdb, corev1.EventTypeNormal, "create pdb", "pdbname=%s", pdb.Spec.PDBName)
@@ -453,7 +552,7 @@ func (r *PDBReconciler) DropPDB(ctx context.Context, req ctrl.Request, pdb *data
 		}
 		pdb.Status.TotalSize = pdb.Spec.TotalSize
 		pdb.Status.Message = "CREATE:OK"
-		pdb.Status.OpenMode = "MOUNT"
+		pdb.Status.OpenMode = "MOUNTED"
 		r.UpdateStatus(ctx, pdb)
 	}
 
